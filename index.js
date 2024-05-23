@@ -3,28 +3,32 @@ const mysql = require('mysql')
 const session = require('express-session')
 const bcrypt = require('bcrypt')
 const multer = require('multer')
+const xlsx = require('xlsx')
 const dotenv = require('dotenv')
 const nodemailer = require('nodemailer')
+const mysql2 = require('mysql2/promise')
 
 const app = express()
 
 app.set('view engine', 'ejs')
-
 app.use(express.static('public'))
-
 app.use(express.urlencoded({ extended: true }))
-
 app.use(express.json())
-
 app.use(session({
     secret: 'c@!@$0m@',
     saveUninitialized: false,
     resave: true
 }))
-
 dotenv.config()
 
 const connection = mysql.createConnection({
+    host: 'localhost',
+    user: 'root',
+    password: '',
+    database: 'calasoma'
+})
+
+const pool = mysql2.createPool({
     host: 'localhost',
     user: 'root',
     password: '',
@@ -51,6 +55,23 @@ app.use((req, res, next) => {
 function loginRequired(req, res) {
     res.locals.isLogedIn || res.redirect('/login')
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 const offensiveWords = ['FUCK', 'SHIT', 'ASSHOLE', 'BITCH', 'DICK', 'CUNT', 'COCK', 'PUSSY', 'SLUT', 'WHORE', 'FAGGOT', 'MOTHERFUCKER', 'NIGGER', 'RETARD', 'TWAT', 'WANKER', 'ASSWIPE', 'BASTARD', 'DAMN', 'GODDAMN', 'ARSE', 'BOLLOCKS', 'BULLSHIT', 'CRAP', 'JACKASS', 'JERK', 'PISS',  'PRICK', 'SCREW', 'SUCK', 'TITS', 'ASSCLOWN', 'DUMBASS', 'FUCKER', 'SHITHEAD', 'ASSFACE', 'ASSHAT', 'CUM', 'DICKHEAD', 'ASSBAG', 'DIPSHIT', 'FUCKFACE', 'MOTHERFUCKING', 'NIGGA',  'SHITHOLE', 'ASSNUGGET', 'BASTARD', 'BLOWJOB', 'COCKSUCKER', 'CUMSLUT', 'DICKBAG', 'DICKWEED', 'DOUCHEBAG', 'FUCKTARD', 'JACKOFF', 'JIZZ', 'MOTHERFUCK', 'NIGGERS', 'PRICKFACE', 'SHITBAG', 'SHITSTAIN', 'TITFUCK', 'WANKSTAIN']
 
@@ -108,6 +129,7 @@ const sendMail = (data) => {
         }
     })
 }
+
 app.get('/', (req, res) => {
     if (req.session.modesession) {
         res.render('index')
@@ -198,16 +220,6 @@ app.post('/signup', async(req, res) => {
     }
 })
 
-
-
-                
-// bcrypt.hash(mwalimu.password, 10, (err, hash) => {
-//     let sql = 'INSERT INTO mwalimu (name, email, password, id) VALUES (?, ?, ?, ?)'
-//     connection.query(sql, [mwalimu.name, mwalimu.email, hash, newId], (error, results) => {
-//         res.redirect('/login')
-//     })
-// })
-
 app.post('/verify-otp', (req, res) => {
     const mwalimu = {
         name: req.body.name,
@@ -265,19 +277,48 @@ app.post('/login', (req, res) => {
     })
 })
 
-
-//     const mailData = {
-//         from: process.env.EMAIL,
-//         to: recieveremail,
-//         subject: subject || 'Default Subject',
-//         text: text || 'Default Text'
-//     }
-//     sendMail(mailData)
-
 app.get('/dashboard', (req, res) => {
     loginRequired(req, res)
     res.render('dashboard')
 })
+
+app.get('/upload', (req, res) => {
+    // loginRequired(req, res)
+    res.render('upload', {error: false})
+})
+
+app.post('/uploadworkbook', upload.single('file'), async (req, res) => {
+    let connection
+    try {
+        const workbook = xlsx.readFile(req.file.path)
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]]
+        const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 })
+
+        connection = await pool.getConnection()
+        await connection.beginTransaction()
+
+        for (let row of data) {
+            const [Name, AdmissionNo, Subject1, Subject2, Subject3, Subject4, Subject5, Subject6] = row
+            try {
+                await connection.query(
+                    'INSERT INTO StudentData (Name, AdmissionNo, Subject1, Subject2, Subject3, Subject4, Subject5, Subject6) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [Name, AdmissionNo, Subject1, Subject2, Subject3, Subject4, Subject5, Subject6]
+                )
+            } catch (error) {
+                console.error('Error occurred during insertion:', error)
+            }
+        }
+
+        await connection.commit()
+        res.send('Data uploaded successfully')
+    } catch (error) {
+        console.error('Error occurred during data insertion:', error)
+        res.status(500).send('Error occurred during data insertion')
+    } finally {
+        if (connection) connection.release()
+    }
+})
+
 app.get('/logout', (req, res) => {
     loginRequired(req, res)
     req.session.destroy((err) => {
